@@ -47,7 +47,7 @@ filesys_t *fs_get_main(void) {
 }
 
 vdisk_t *initrd_to_vdisk(void) {
-    uint8_t *initrd = (uint8_t *) diskiso_get_start();
+    uint8_t *initrd = diskiso_get_start();
     uint32_t initrd_size = diskiso_get_size();
 
     if (initrd_size == 0) {
@@ -59,9 +59,7 @@ vdisk_t *initrd_to_vdisk(void) {
 
     for (uint32_t i = 0; i < initrd_size / FS_SECTOR_SIZE; i++) {
         vdisk_write_sector(vdisk, SID_FORMAT(0, i), initrd + i * FS_SECTOR_SIZE);
-        if (((sector_t*) vdisk->sectors + i)->data[0] &&
-            ((sector_t*) vdisk->sectors + i)->data[1]
-        ) {
+        if (((sector_t*) vdisk->sectors + i)->data[0]) {
             vdisk_note_sector_used(vdisk, SID_FORMAT(0, i));
         }
     }
@@ -91,27 +89,27 @@ int filesys_init(void) {
 
     if (fu_add_element_to_dir(
         MAIN_FS,
-        ROOT_SID,
+        SID_ROOT,
         fu_path_to_sid(MAIN_FS, SID_FORMAT(2, 0), "/user"),
         "user"
     ) || fu_add_element_to_dir(
         MAIN_FS,
-        ROOT_SID,
+        SID_ROOT,
         fu_path_to_sid(MAIN_FS, SID_FORMAT(2, 0), "/bin"),
         "bin"
     ) || fu_add_element_to_dir(
         MAIN_FS,
-        ROOT_SID,
+        SID_ROOT,
         fu_path_to_sid(MAIN_FS, SID_FORMAT(2, 0), "/lib"),
         "lib"
     ) || fu_add_element_to_dir(
         MAIN_FS,
-        ROOT_SID,
+        SID_ROOT,
         fu_path_to_sid(MAIN_FS, SID_FORMAT(2, 0), "/sys"),
         "sys"
     ) || fu_add_element_to_dir(
         MAIN_FS,
-        ROOT_SID,
+        SID_ROOT,
         fu_path_to_sid(MAIN_FS, SID_FORMAT(2, 0), "/zada"),
         "zada"
     )) {
@@ -121,7 +119,7 @@ int filesys_init(void) {
     uint32_t src_sid = fu_path_to_sid(MAIN_FS, SID_FORMAT(2, 0), "/src");
     if (!IS_SID_NULL(src_sid) && fu_add_element_to_dir(
         MAIN_FS,
-        ROOT_SID,
+        SID_ROOT,
         src_sid,
         "src"
     )) return 1;

@@ -11,63 +11,112 @@
 
 #include <profan/syscall.h>
 #include <profan/filesys.h>
-#include <profan/type.h>
+
+#define _PROFAN_NO_WD
 #include <profan.h>
 
 #include <string.h>
 #include <stdlib.h>
 #include <stdarg.h>
+#include <unistd.h>
 #include <stdio.h>
+#include <errno.h>
 
-int access(const char *a, int b) {
-    puts("access is not implemented yet, WHY DO YOU USE IT ?");
+char profan_wd_path[PROFAN_PATH_MAX] = "/";
+uint32_t profan_wd_sid = SID_ROOT;
+
+int access(const char *pathname, int mode) {
+    // add the current working directory to the filename
+    uint32_t elem = profan_resolve_path(pathname);
+
+    // check if path exists
+    if (IS_SID_NULL(elem)) {
+        errno = ENOENT;
+        return -1;
+    }
+
+    // everything is fine (dog meme)
     return 0;
 }
 
 unsigned alarm(unsigned a) {
-    puts("alarm is not implemented yet, WHY DO YOU USE IT ?");
+    profan_nimpl("alarm");
     return 0;
 }
 
-int chdir(const char *a) {
-    puts("chdir is not implemented yet, WHY DO YOU USE IT ?");
+int chdir(const char *path) {
+    uint32_t sid;
+    char *dir;
+
+    // check if dir exists
+    dir = profan_join_path(profan_wd_path, path);
+    fu_simplify_path(dir);
+
+    sid = fu_path_to_sid(SID_ROOT, dir);
+
+    if (!fu_is_dir(sid)) {
+        errno = ENOTDIR;
+        free(dir);
+        return -1;
+    }
+
+    // update the working directory
+    strlcpy(profan_wd_path, dir, PROFAN_PATH_MAX);
+    profan_wd_sid = sid;
+
+    free(dir);
     return 0;
 }
 
 int chown(const char *a, uid_t b, gid_t c) {
-    puts("chown is not implemented yet, WHY DO YOU USE IT ?");
+    profan_nimpl("chown");
     return 0;
 }
 
 int close(int fd) {
-    return fm_close(fd);
+    int r = fm_close(fd);
+    if (r < 0) {
+        errno = -r;
+        return -1;
+    }
+    return 0;
 }
 
 size_t confstr(int a, char *b, size_t c) {
-    puts("confstr is not implemented yet, WHY DO YOU USE IT ?");
+    profan_nimpl("confstr");
     return 0;
 }
 
 char *crypt(const char *a, const char *b) {
-    puts("crypt is not implemented yet, WHY DO YOU USE IT ?");
+    profan_nimpl("crypt");
     return 0;
 }
 
 char *ctermid(char *a) {
-    puts("ctermid is not implemented yet, WHY DO YOU USE IT ?");
+    profan_nimpl("ctermid");
     return 0;
 }
 
 int dup(int fd) {
-    return fm_dup(fd);
+    int newfd = fm_dup(fd);
+    if (newfd < 0) {
+        errno = -newfd;
+        return -1;
+    }
+    return newfd;
 }
 
 int dup2(int fd, int newfd) {
-    return fm_dup2(fd, newfd);
+    int r = fm_dup2(fd, newfd);
+    if (r < 0) {
+        errno = -r;
+        return -1;
+    }
+    return newfd;
 }
 
 void encrypt(char a[64], int b) {
-    puts("encrypt is not implemented yet, WHY DO YOU USE IT ?");
+    profan_nimpl("encrypt");
 }
 
 int execve(const char *fullpath, char *const argv[], char *const envp[]);
@@ -94,21 +143,21 @@ int execl(const char *fullpath, const char *first, ...) {
     va_end(args);
     argv[argc] = NULL;
 
-    return execve(fullpath, argv, __get_environ_ptr());
+    return execve(fullpath, argv, environ);
 }
 
 int execle(const char *fullpath, const char *arg, ...) {
-    puts("execle is not implemented yet, WHY DO YOU USE IT ?");
+    profan_nimpl("execle");
     return 0;
 }
 
 int execlp(const char *file, const char *arg, ...) {
-    puts("execlp is not implemented yet, WHY DO YOU USE IT ?");
+    profan_nimpl("execlp");
     return 0;
 }
 
 int execv(const char *fullpath, char *const argv[]) {
-    return execve(fullpath, argv, NULL);
+    return execve(fullpath, argv, environ);
 }
 
 int execve(const char *fullpath, char *const argv[], char *const envp[]) {
@@ -125,105 +174,142 @@ int execve(const char *fullpath, char *const argv[], char *const envp[]) {
 }
 
 int execvp(const char *file, char *const argv[]) {
-    puts("execvp is not implemented yet, WHY DO YOU USE IT ?");
+    profan_nimpl("execvp");
     return 0;
 }
 
 void _exit(int status) {
-    exit(status);
+    syscall_process_kill(syscall_process_pid(), status);
+    while (1); // unreachable (probably)
 }
 
 int fchown(int a, uid_t b, gid_t c) {
-    puts("fchown is not implemented yet, WHY DO YOU USE IT ?");
+    profan_nimpl("fchown");
     return 0;
 }
 
 int fchdir(int a) {
-    puts("fchdir is not implemented yet, WHY DO YOU USE IT ?");
+    profan_nimpl("fchdir");
     return 0;
 }
 
 int fdatasync(int a) {
-    puts("fdatasync is not implemented yet, WHY DO YOU USE IT ?");
+    profan_nimpl("fdatasync");
     return 0;
 }
 
 pid_t fork(void) {
-    return syscall_process_fork();
+    pid_t pid = syscall_process_fork();
+
+    // error while forking
+    if (pid == -1) {
+        errno = EAGAIN;
+        return -1;
+    }
+
+    // child process
+    if (pid == 0) {
+        return 0;
+    }
+
+    fm_declare_child(pid);
+
+    // parent process
+    syscall_process_wakeup(pid, 0);
+
+    return pid;
 }
 
 long fpathconf(int a, int b) {
-    puts("fpathconf is not implemented yet, WHY DO YOU USE IT ?");
+    profan_nimpl("fpathconf");
     return 0;
 }
 
 int fsync(int a) {
-    puts("fsync is not implemented yet, WHY DO YOU USE IT ?");
+    profan_nimpl("fsync");
     return 0;
 }
 
 int ftruncate(int a, off_t b) {
-    puts("ftruncate is not implemented yet, WHY DO YOU USE IT ?");
+    profan_nimpl("ftruncate");
     return 0;
 }
 
-char *getcwd(char *a, size_t b) {
-    puts("getcwd is not implemented yet, WHY DO YOU USE IT ?");
-    return 0;
+char *getcwd(char *buf, size_t size) {
+    size_t wd_len;
+
+    wd_len = strlen(profan_wd_path);
+
+    if (buf == NULL) {
+        if (size < wd_len + 1)
+            size = wd_len + 1;
+
+        buf = malloc(size);
+        strcpy(buf, profan_wd_path);
+        return buf;
+    }
+
+    if (size < wd_len + 1) {
+        errno = ERANGE;
+        return NULL;
+    }
+
+    strcpy(buf, profan_wd_path);
+    return buf;
 }
 
 gid_t getegid(void) {
-    puts("getegid is not implemented yet, WHY DO YOU USE IT ?");
+    profan_nimpl("getegid");
     return 0;
 }
 
 uid_t geteuid(void) {
-    // without user system, we just return 0 for 'root'
+    // without user system, we just return 0 for "root"
     return 0;
 }
 
 gid_t getgid(void) {
-    puts("getgid is not implemented yet, WHY DO YOU USE IT ?");
+    profan_nimpl("getgid");
     return 0;
 }
 
 int getgroups(int a, gid_t *b) {
-    puts("getgroups is not implemented yet, WHY DO YOU USE IT ?");
+    profan_nimpl("getgroups");
     return 0;
 }
 
 long gethostid(void) {
-    puts("gethostid is not implemented yet, WHY DO YOU USE IT ?");
+    profan_nimpl("gethostid");
     return 0;
 }
 
 int gethostname(char *a, size_t n) {
-    puts("gethostname is not implemented yet, WHY DO YOU USE IT ?");
+    profan_nimpl("gethostname");
     return 0;
 }
 
 char *getlogin(void) {
-    puts("getlogin is not implemented yet, WHY DO YOU USE IT ?");
+    profan_nimpl("getlogin");
     return NULL;
 }
 
 int getlogin_r(char *a, size_t n) {
-    puts("getlogin_r is not implemented yet, WHY DO YOU USE IT ?");
+    profan_nimpl("getlogin_r");
     return 0;
 }
 
 int getopt(int a, char * const *b, const char *c) {
-    puts("getopt is not implemented yet, WHY DO YOU USE IT ?");
+    profan_nimpl("getopt");
     return 0;
 }
 
 pid_t getpgid(pid_t a) {
-    puts("getpgid is not implemented yet, WHY DO YOU USE IT ?");
+    profan_nimpl("getpgid");
     return 0;
 }
 
 pid_t getpgrp(void) {
-    puts("getpgrp is not implemented yet, WHY DO YOU USE IT ?");
+    profan_nimpl("getpgrp");
     return 0;
 }
 
@@ -236,7 +322,7 @@ pid_t getppid(void) {
 }
 
 pid_t getsid(pid_t a) {
-    puts("getsid is not implemented yet, WHY DO YOU USE IT ?");
+    profan_nimpl("getsid");
     return 0;
 }
 
@@ -246,118 +332,133 @@ uid_t getuid(void) {
 }
 
 char *getwd(char *a) {
-    puts("getwd is not implemented yet, WHY DO YOU USE IT ?");
+    puts("getwd is deprecated, use getcwd instead");
     return NULL;
 }
 
 int isatty(int fd) {
-    return fm_isfctf(fd);
+    return fm_isfctf(fd) > 0;
 }
 
 int lchown(const char *a, uid_t b, gid_t c) {
-    puts("lchown is not implemented yet, WHY DO YOU USE IT ?");
+    profan_nimpl("lchown");
     return 0;
 }
 
 int link(const char *a, const char *b) {
-    puts("link is not implemented yet, WHY DO YOU USE IT ?");
+    profan_nimpl("link");
     return 0;
 }
 
 int lockf(int a, int b, off_t c) {
-    puts("lockf is not implemented yet, WHY DO YOU USE IT ?");
+    profan_nimpl("lockf");
     return 0;
 }
 
 off_t lseek(int fd, off_t offset, int whence) {
-    return fm_lseek(fd, offset, whence);
+    int r = fm_lseek(fd, offset, whence);
+    if (r < 0) {
+        errno = -r;
+        return -1;
+    }
+    return r;
 }
 
 int nice(int a) {
-    puts("nice is not implemented yet, WHY DO YOU USE IT ?");
+    profan_nimpl("nice");
     return 0;
 }
 
 long pathconf(const char *a, int b) {
-    puts("pathconf is not implemented yet, WHY DO YOU USE IT ?");
+    profan_nimpl("pathconf");
     return 0;
 }
 
 int pause(void) {
-    puts("pause is not implemented yet, WHY DO YOU USE IT ?");
+    profan_nimpl("pause");
     return 0;
 }
 
 int pipe(int fd[2]) {
-    return fm_pipe(fd);
+    int r = fm_pipe(fd);
+    if (r < 0) {
+        errno = -r;
+        return -1;
+    }
+    return 0;
 }
 
 ssize_t pread(int a, void *b, size_t c, off_t d) {
-    puts("pread is not implemented yet, WHY DO YOU USE IT ?");
+    profan_nimpl("pread");
     return 0;
 }
 
 ssize_t pwrite(int a, const void *b, size_t c, off_t d) {
-    puts("pwrite is not implemented yet, WHY DO YOU USE IT ?");
+    profan_nimpl("pwrite");
     return 0;
 }
 
 ssize_t read(int fd, void *buf, size_t count) {
-    return fm_read(fd, buf, count);
+    int r = fm_read(fd, buf, count);
+    if (r < 0) {
+        errno = -r;
+        return -1;
+    }
+    return r;
 }
 
 ssize_t readlink(const char *restrict a, char *restrict b, size_t c) {
-    puts("readlink is not implemented yet, WHY DO YOU USE IT ?");
+    profan_nimpl("readlink");
     return 0;
 }
 
 int rmdir(const char *a) {
-    puts("rmdir is not implemented yet, WHY DO YOU USE IT ?");
+    profan_nimpl("rmdir");
     return 0;
 }
 
 int setegid(gid_t a) {
-    puts("setegid is not implemented yet, WHY DO YOU USE IT ?");
+    profan_nimpl("setegid");
     return 0;
 }
 
 int seteuid(uid_t a) {
-    puts("seteuid is not implemented yet, WHY DO YOU USE IT ?");
+    profan_nimpl("seteuid");
     return 0;
 }
 
 int setgid(gid_t a) {
-    puts("setgid is not implemented yet, WHY DO YOU USE IT ?");
+    profan_nimpl("setgid");
     return 0;
 }
 
 int setpgid(pid_t a, pid_t b) {
-    puts("setpgid is not implemented yet, WHY DO YOU USE IT ?");
+    profan_nimpl("setpgid");
     return 0;
 }
 
 pid_t setpgrp(void) {
-    puts("setpgrp is not implemented yet, WHY DO YOU USE IT ?");
+    profan_nimpl("setpgrp");
     return 0;
 }
 
 int setregid(gid_t a, gid_t b) {
-    puts("setregid is not implemented yet, WHY DO YOU USE IT ?");
+    profan_nimpl("setregid");
     return 0;
 }
 
 int setreuid(uid_t a, uid_t b) {
-    puts("setreuid is not implemented yet, WHY DO YOU USE IT ?");
+    profan_nimpl("setreuid");
     return 0;
 }
 
 pid_t setsid(void) {
-    puts("setsid is not implemented yet, WHY DO YOU USE IT ?");
+    profan_nimpl("setsid");
     return 0;
 }
 
 int setuid(uid_t a) {
-    puts("setuid is not implemented yet, WHY DO YOU USE IT ?");
+    profan_nimpl("setuid");
     return 0;
 }
 
@@ -367,85 +468,86 @@ unsigned sleep(unsigned seconds) {
 }
 
 void swab(const void *restrict a, void *restrict n, ssize_t c) {
-    puts("swab is not implemented yet, WHY DO YOU USE IT ?");
+    profan_nimpl("swab");
 }
 
 int symlink(const char *a, const char *b) {
-    puts("symlink is not implemented yet, WHY DO YOU USE IT ?");
+    profan_nimpl("symlink");
     return 0;
 }
 
 void sync(void) {
-    puts("sync is not implemented yet, WHY DO YOU USE IT ?");
+    profan_nimpl("sync");
 }
 
 long sysconf(int a) {
-    puts("sysconf is not implemented yet, WHY DO YOU USE IT ?");
+    profan_nimpl("sysconf");
     return 0;
 }
 
 pid_t tcgetpgrp(int a) {
-    puts("tcgetpgrp is not implemented yet, WHY DO YOU USE IT ?");
+    profan_nimpl("tcgetpgrp");
     return 0;
 }
 
 int tcsetpgrp(int a, pid_t b) {
-    puts("tcsetpgrp is not implemented yet, WHY DO YOU USE IT ?");
+    profan_nimpl("tcsetpgrp");
     return 0;
 }
 
 int truncate(const char *a, off_t b) {
-    puts("truncate is not implemented yet, WHY DO YOU USE IT ?");
+    profan_nimpl("truncate");
     return 0;
 }
 
 char *ttyname(int a) {
-    puts("ttyname is not implemented yet, WHY DO YOU USE IT ?");
+    profan_nimpl("ttyname");
     return NULL;
 }
 
 int ttyname_r(int a, char *b, size_t c) {
-    puts("ttyname_r is not implemented yet, WHY DO YOU USE IT ?");
+    profan_nimpl("ttyname_r");
     return 0;
 }
 
 useconds_t ualarm(useconds_t a, useconds_t b) {
-    puts("ualarm is not implemented yet, WHY DO YOU USE IT ?");
+    profan_nimpl("ualarm");
     return 0;
 }
 
 int unlink(const char *filename) {
     // add the current working directory to the filename
-    char *pwd = getenv("PWD");
-    if (!pwd) pwd = "/";
-    char *path = assemble_path(pwd, (char *) filename);
+    char *path = profan_join_path(profan_wd_path, (char *) filename);
 
     // check if the file exists
-    uint32_t parent_sid, elem = fu_path_to_sid(ROOT_SID, path);
+    uint32_t parent_sid, elem = fu_path_to_sid(SID_ROOT, path);
     if (!fu_is_file(elem)) {
-        fprintf(stderr, "unlink: %s: not a file\n", filename);
+        errno = ENOENT;
         free(path);
         return -1;
     }
 
     // get the parent directory sid
     char *parent;
-    fu_sep_path(path, &parent, NULL);
-    parent_sid = fu_path_to_sid(ROOT_SID, parent);
+    profan_sep_path(path, &parent, NULL);
+    parent_sid = fu_path_to_sid(SID_ROOT, parent);
     free(parent);
     free(path);
 
     if (IS_SID_NULL(parent_sid)) {
-        fprintf(stderr, "unlink: %s: parent not found\n", filename);
+        errno = ENOENT;
         return -1;
     }
 
     // remove the element from the parent directory
-    fu_remove_element_from_dir(parent_sid, elem);
+    if (fu_remove_from_dir(parent_sid, elem)) {
+        errno = EIO;
+        return -1;
+    }
 
     // delete the file content
     if (syscall_fs_delete(NULL, elem)) {
-        fprintf(stderr, "unlink: %s: failed to delete\n", filename);
+        errno = EIO;
         return -1;
     }
 
@@ -453,12 +555,11 @@ int unlink(const char *filename) {
 }
 
 int usleep(useconds_t usec) {
-    if (usec == 0) return 0;
     return syscall_process_sleep(syscall_process_pid(), usec / 1000) ? -1 : 0;
 }
 
 pid_t vfork(void) {
-    puts("vfork is not implemented yet, WHY DO YOU USE IT ?");
+    profan_nimpl("vfork");
     return -1;
 }
 

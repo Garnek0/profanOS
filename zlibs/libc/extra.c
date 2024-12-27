@@ -11,14 +11,23 @@
 
 #define _SYSCALL_CREATE_FUNCS
 
-#include <profan/syscall.h>
 #include <profan/filesys.h>
+#include <profan/syscall.h>
 #include <profan.h>
 
 #include <stdarg.h>
 #include <stdlib.h>
 #include <string.h>
+#include <unistd.h>
 #include <stdio.h>
+
+#include "config_libc.h"
+
+/************************
+ *                     *
+ *   DEBUG FUNCTIONS   *
+ *                     *
+************************/
 
 int serial_debug(char *frm, ...) {
     va_list args;
@@ -37,33 +46,68 @@ int serial_debug(char *frm, ...) {
     return len;
 }
 
-void profan_print_memory(void *addr, uint32_t size) {
-    for (uint32_t i = 0; i < size / 16 + (size % 16 != 0); i++) {
-        printf("%08x: ", (uint32_t) addr + i * 16);
+// defined in deluge - don't free libname and result
+char *profan_fn_name(void *ptr, char **libname) {
+    profan_nimpl("profan_fn_name");
+    return NULL;
+}
 
-        for (int j = 0; j < 16; j++) {
-            if (i * 16 + j < size)
-                printf("%02x ", *((unsigned char *) addr + i * 16 + j));
-            else
-                printf("   ");
-            if (j % 4 == 3)
-                printf(" ");
-        }
+void profan_print_trace(void) {
+    struct stackframe {
+        struct stackframe *ebp;
+        uint32_t eip;
+    } *ebp;
 
-        for (int j = 0; j < 16; j++) {
-            unsigned char c = *((unsigned char *) addr + i * 16 + j);
-            if (i * 16 + j >= size)
-                break;
-            if (c >= 32 && c <= 126)
-                printf("%c", c);
-            else
-                printf(".");
-        }
-        printf("\n");
+    asm volatile("movl %%ebp, %0" : "=r" (ebp));
+    ebp = ebp->ebp;
+
+    char *libname, *name;
+
+    for (int i = 0; i < 5 && ebp; i++) {
+        name = profan_fn_name((void *) ebp->eip, &libname);
+
+        if (name)
+            fprintf(stderr, "  %08x: %s (%s)\n", ebp->eip, name, libname);
+        else
+            fprintf(stderr, "  %08x: ???\n", ebp->eip);
+
+        ebp = ebp->ebp;
     }
 }
 
-char *assemble_path(const char *old, const char *new) {
+/*************************
+ *                      *
+ *     GLOBAL UTILS     *
+ *                      *
+*************************/
+
+char *profan_input(int *size) {
+    char *term = getenv("TERM");
+    if (term && strstr(term, "serial"))
+        return profan_input_serial(size, SERIAL_PORT_A);
+    return profan_input_keyboard(size, term);
+}
+
+void profan_nimpl(char *name) {
+    write(2, "libc: ", 6);
+    write(2, name, strlen(name));
+    write(2, ": function not implemented\n", 27);
+    #if NOT_IMPLEMENTED_ABORT
+    abort();
+    #endif
+}
+
+char *profan_libc_version(void) {
+    return PROFAN_LIBC_VERSION;
+}
+
+/*************************
+ *                      *
+ *   FILESYSTEM UTILS   *
+ *                      *
+*************************/
+
+char *profan_join_path(const char *old, const char *new) {
     char *result;
     int len;
 
@@ -87,29 +131,87 @@ char *assemble_path(const char *old, const char *new) {
     return result;
 }
 
-int profan_wait_pid(uint32_t pid) {
-    uint32_t current_pid = syscall_process_pid();
+void profan_sep_path(const char *fullpath, char **parent, char **cnt) {
+    int i, len;
 
-    if (pid == current_pid || !pid)
-        return 0;
+    len = strlen(fullpath);
 
-    while (syscall_process_state(pid) < 4)
-        syscall_process_sleep(current_pid, 10);
+    if (parent != NULL) {
+        *parent = calloc(1, len + 2);
+    }
 
-    return syscall_process_info(pid, PROCESS_INFO_EXIT_CODE);
+    if (cnt != NULL) {
+        *cnt = calloc(1, len + 2);
+    }
+
+    while (len > 0 && fullpath[len - 1] == '/') {
+        len--;
+    }
+
+    for (i = len - 1; i >= 0; i--) {
+        if (fullpath[i] == '/') {
+            break;
+        }
+    }
+
+    if (parent != NULL && i >= 0) {
+        if (i == 0) {
+            strcpy(*parent, "/");
+        } else {
+            strncpy(*parent, fullpath, i);
+        }
+    }
+
+    if (cnt != NULL) {
+        strcpy(*cnt, fullpath + i + 1);
+    }
 }
 
-char *open_input(int *size) {
-    char *term = getenv("TERM");
-    if (!term)
+uint32_t profan_resolve_path(const char *path) {
+    if (path[0] == '/')
+        return fu_path_to_sid(SID_ROOT, path);
+    return fu_path_to_sid(profan_wd_sid, path);
+}
+
+/****************************
+ *                         *
+ *   KERNEL MEMORY ALLOC   *
+ *                         *
+****************************/
+
+// kernel memory allocation functions
+void *profan_kmalloc(uint32_t size, int as_kernel) {
+    return (void *) syscall_mem_alloc(size, 0, as_kernel ? 6 : 1);
+}
+
+void *profan_kcalloc(uint32_t nmemb, uint32_t lsize, int as_kernel) {
+    uint32_t size = lsize * nmemb;
+    void *addr = (void *) syscall_mem_alloc(size, 0, as_kernel ? 6 : 1);
+
+    if (addr == NULL)
         return NULL;
-    if (strstr(term, "serial"))
-        return open_input_serial(size, SERIAL_PORT_A);
-    return open_input_keyboard(size, term);
+
+    memset(addr, 0, size);
+    return addr;
 }
 
-// defined in deluge
-void profan_cleanup(void) {
-    puts("libc extra: profan_cleanup: should not be called");
-    return;
+void *profan_krealloc(void *mem, uint32_t new_size, int as_kernel) {
+    if (mem == NULL)
+        return (void *) syscall_mem_alloc(new_size, 0, as_kernel ? 6 : 1);
+
+    uint32_t old_size = syscall_mem_get_alloc_size((uint32_t) mem);
+    void *new_addr = (void *) syscall_mem_alloc(new_size, 0, as_kernel ? 6 : 1);
+
+    if (new_addr == NULL)
+        return NULL;
+
+    memcpy(new_addr, mem, old_size < new_size ? old_size : new_size);
+    syscall_mem_free((uint32_t) mem);
+    return new_addr;
+}
+
+void profan_kfree(void *mem) {
+    if (mem == NULL)
+        return;
+    syscall_mem_free((uint32_t) mem);
 }

@@ -133,39 +133,29 @@ int draw_tree(uint32_t sid, int depth) {
 
     // free
     for (int j = 0; j < count; j++)
-        free(names[j]);
-    free(names);
-    free(sids);
+        profan_kfree(names[j]);
+    profan_kfree(names);
+    profan_kfree(sids);
 
     return 0;
 }
 
 int main(int argc, char **argv) {
-    if (argc > 2 || (argc == 2 && argv[1][0] == '-')) {
+    if (argc > 2 || (argv[1] && argv[1][0] == '-')) {
         fprintf(stderr, "Usage: %s [path]\n", argv[0]);
         return 1;
     }
 
-    char *path = getenv("PWD");
+    const char *path = argv[1] ? argv[1] : profan_wd_path;
+    uint32_t sid = profan_resolve_path(path);
 
-    if (!path)
-        path = "/";
-
-    path = assemble_path(path, argc == 2 ? argv[1] : ".");
-    fu_simplify_path(path);
-
-    uint32_t sid = fu_path_to_sid(ROOT_SID, path);
-
-    if (!sid) {
-        fprintf(stderr, "Error: %s does not exist\n", path);
-        free(path);
+    if (!fu_is_dir(sid)) {
+        fprintf(stderr, "Error: %s: Not a directory\n", path);
         return 1;
     }
 
     printf("\033[94m%s\033[0m\n", path);
     draw_tree(sid, 0);
-
-    free(path);
 
     return 0;
 }

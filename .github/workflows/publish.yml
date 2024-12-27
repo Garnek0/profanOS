@@ -4,7 +4,7 @@ on:
   push:
     branches: [ "main" ]
   schedule:
-    - cron: "15 15 * * *" # every day at 15:15 UTC
+    - cron: "00 16 * * 3,0" # Wed, Sun 16:00 UTC
   workflow_dispatch:
 
 jobs:
@@ -17,7 +17,7 @@ jobs:
     - name: install dependencies
       run: |
         sudo apt-get update
-        sudo apt-get install -y gcc g++ nasm make genisoimage python3 mtools
+        sudo apt-get install -y make python3 gcc g++ nasm grub-common xorriso grub-pc-bin mtools
 
     - name: build img
       run: |
@@ -25,7 +25,7 @@ jobs:
         echo "PROFAN_HDD=disk-$VERSION.bin" >> $GITHUB_ENV
         echo "PROFAN_ISO=profanOS-$VERSION.iso" >> $GITHUB_ENV
         echo "PROFAN_VER=profanOS $VERSION" >> $GITHUB_ENV
-        make addons elf bdisk iso
+        make gaddons elf bdisk iso
         cd out/disk && zip -r ../../initrd-build.zip * && cd ../..
         cp initrd.bin disk-$VERSION.bin
         cp profanOS.iso profanOS-$VERSION.iso

@@ -78,9 +78,9 @@ rm_options_t *parse_options(int argc, char **argv) {
 int remove_hard_link(uint32_t elem, char *path) {
     char *parent;
 
-    fu_sep_path(path, &parent, NULL);
+    profan_sep_path(path, &parent, NULL);
 
-    uint32_t parent_sid = fu_path_to_sid(ROOT_SID, parent);
+    uint32_t parent_sid = fu_path_to_sid(SID_ROOT, parent);
     free(parent);
 
     if (IS_SID_NULL(parent_sid)) {
@@ -88,17 +88,17 @@ int remove_hard_link(uint32_t elem, char *path) {
         return 1;
     }
 
-    return fu_remove_element_from_dir(parent_sid, elem);
+    return fu_remove_from_dir(parent_sid, elem);
 }
 
 int remove_elem(uint32_t elem, char *path, rm_options_t *options) {
-    if (!(fu_is_file(elem) || fu_is_dir(elem) || fu_is_fctf(elem))) {
+    if (!options->link_only && !(fu_is_file(elem) || fu_is_dir(elem) || fu_is_fctf(elem))) {
         fprintf(stderr, "rm: Cannot remove '%s': Unknown element type\n", path);
         return 1;
     }
 
     // recursive remove directory
-    if (fu_is_dir(elem)) {
+    if (fu_is_dir(elem) && !options->link_only) {
         if (options->verbose)
             printf("rm: Going into directory '%s'\n", path);
 
@@ -116,20 +116,20 @@ int remove_elem(uint32_t elem, char *path, rm_options_t *options) {
         char *new_path;
         for (int i = 0; i < count; i++) {
             if (strcmp(names[i], ".") == 0 || strcmp(names[i], "..") == 0) {
-                free(names[i]);
+                profan_kfree(names[i]);
                 continue;
             }
 
-            new_path = assemble_path(path, names[i]);
+            new_path = profan_join_path(path, names[i]);
 
             if (remove_elem(content[i], new_path, options))
                 exit(1);
 
             free(new_path);
-            free(names[i]);
+            profan_kfree(names[i]);
         }
-        free(content);
-        free(names);
+        profan_kfree(content);
+        profan_kfree(names);
     }
 
     if (options->verbose)
@@ -178,12 +178,8 @@ int main(int argc, char **argv) {
         return 1;
     }
 
-    char *pwd = getenv("PWD");
-    if (!pwd) pwd = "/";
-
-    char *path = assemble_path(pwd, options->path);
-
-    uint32_t elem = fu_path_to_sid(ROOT_SID, path);
+    char *path = profan_join_path(profan_wd_path, options->path);
+    uint32_t elem = fu_path_to_sid(SID_ROOT, path);
 
     if (IS_SID_NULL(elem)) {
         fprintf(stderr, "rm: Cannot remove '%s': Unreachable path\n", path);

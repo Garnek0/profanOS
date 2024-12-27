@@ -15,6 +15,7 @@
 #include <profan/filesys.h>
 #include <profan/libmmq.h>
 
+#define DEFAULT_FONT "/zada/fonts/lat38-bold18.psf"
 #define SCROLL_LINES 8
 
 typedef struct {
@@ -27,8 +28,8 @@ typedef struct {
 } font_data_t;
 
 typedef struct {
+    uint8_t color;
     char content;
-    char color;
 } screen_char_t;
 
 typedef struct {
@@ -58,17 +59,14 @@ panda_global_t *g_panda;
 #define set_pixel(x, y, color) \
     g_panda->fb[(x) + (y) * g_panda->pitch] = color
 
-void init_panda();
+static void init_panda();
 
 int main(void) {
     init_panda();
     return 0;
 }
 
-font_data_t *load_psf_font(const char *file) {
-    uint32_t sid = fu_path_to_sid(ROOT_SID, file);
-    if (IS_SID_NULL(sid)) return NULL;
-
+static font_data_t *load_psf_font(uint32_t sid) {
     uint32_t magic;
     uint32_t version;
     uint32_t headersize;
@@ -88,10 +86,10 @@ font_data_t *load_psf_font(const char *file) {
     if (magic != 0x864ab572 || version != 0)
         return NULL;
 
-    uint8_t *font = malloc_ask(charcount * charsize);
+    uint8_t *font = kmalloc_ask(charcount * charsize);
     fu_file_read(sid, font, headersize, charcount * charsize);
 
-    font_data_t *psf = malloc_ask(sizeof(font_data_t));
+    font_data_t *psf = kmalloc_ask(sizeof(font_data_t));
     psf->width = width;
     psf->height = height;
     psf->charcount = charcount;
@@ -101,12 +99,12 @@ font_data_t *load_psf_font(const char *file) {
     return psf;
 }
 
-void free_font(font_data_t *pff) {
-    free(pff->data);
-    free(pff);
+static void free_font(font_data_t *pff) {
+    kfree(pff->data);
+    kfree(pff);
 }
 
-uint32_t compute_color(uint8_t color) {
+static uint32_t compute_color(uint8_t color) {
     uint32_t rgb[] = {
         0x000000, 0x0000AA, 0x00AA00, 0x00AAAA,
         0xAA0000, 0xAA00AA, 0xAA8800, 0xAAAAAA,
@@ -118,7 +116,7 @@ uint32_t compute_color(uint8_t color) {
     return rgb[(int) color];
 }
 
-char compute_ansi_color(char ansi_nb, int part, char old_color) {
+static char compute_ansi_color(char ansi_nb, int part, char old_color) {
     char fg = old_color & 0xF;
     char bg = (old_color >> 4) & 0xF;
 
@@ -139,12 +137,14 @@ char compute_ansi_color(char ansi_nb, int part, char old_color) {
         fg = ansi_nb + 8;
     } else if (part == 2) {
         bg = ansi_nb;
+    } else {
+        bg = ansi_nb + 8;
     }
 
     return (bg << 4) | fg;
 }
 
-void print_char(uint32_t xo, uint32_t yo, uint8_t c, uint8_t color_code) {
+static void print_char(uint32_t xo, uint32_t yo, uint8_t c, uint8_t color_code) {
     uint32_t bg_color = compute_color((color_code >> 4) & 0xF);
     uint32_t fg_color = compute_color(color_code & 0xF);
 
@@ -176,7 +176,7 @@ void panda_set_char(uint32_t x, uint32_t y, uint8_t c, uint8_t color) {
     print_char(x * g_panda->font->width, y * g_panda->font->height, c, color);
 }
 
-void panda_clear_screen(void) {
+static void panda_clear_screen(void) {
     if (!g_panda) return;
     for (int i = 0; i < g_panda->max_lines; i++) {
         for (int j = 0; j < g_panda->max_cols; j++) {
@@ -188,7 +188,7 @@ void panda_clear_screen(void) {
     g_panda->scroll_offset = 0;
 }
 
-int compute_ansi_escape(const char *str, panda_global_t *g_panda) {
+static int compute_ansi_escape(const char *str, panda_global_t *g_panda, int main_color) {
     const char *start = str;
 
     if (str[1] == '[') str += 2;
@@ -212,31 +212,36 @@ int compute_ansi_escape(const char *str, panda_global_t *g_panda) {
     }
 
     // font color
-    if (str[0] == '3' && str[2] == 'm') {
+    if (str[0] == '3' && str[1] && str[2] == 'm') {
         g_panda->color = compute_ansi_color(str[1], 0, g_panda->color);
         return 4;
     }
 
     // highlight font color
-    if (str[0] == '9' && str[2] == 'm') {
+    if (str[0] == '9' && str[1] && str[2] == 'm') {
         g_panda->color = compute_ansi_color(str[1], 1, g_panda->color);
         return 4;
     }
 
     // background color
-    if (str[0] == '4' && str[2] == 'm') {
+    if (str[0] == '4' && str[1] && str[2] == 'm') {
         g_panda->color = compute_ansi_color(str[1], 2, g_panda->color);
         return 4;
     }
 
+    if (str[0] == '1' && str[1] == '0' && str[2] && str[3] == 'm') {
+        g_panda->color = compute_ansi_color(str[2], 3, g_panda->color);
+        return 5;
+    }
+
     // reset color
     if (str[0] == '0' && str[1] == 'm') {
-        g_panda->color = 0xF;
+        g_panda->color = main_color == -1 ? 0xF : main_color;
         return 3;
     }
 
     // cursor hide and show
-    if (strncmp(str, "?25", 3) == 0) {
+    if (str_ncmp(str, "?25", 3) == 0) {
         if (str[3] == 'l') {
             g_panda->cursor_is_hidden = 0;
         } else if (str[3] == 'h') {
@@ -265,19 +270,19 @@ int compute_ansi_escape(const char *str, panda_global_t *g_panda) {
 
     // cursor up
     if (tmp[0] == 'A') {
-        int n = atoi(str);
+        int n = str_int(str);
         g_panda->cursor_y -= n;
     }
 
     // cursor down
     if (tmp[0] == 'B') {
-        int n = atoi(str);
+        int n = str_int(str);
         g_panda->cursor_y += n;
     }
 
     // cursor forward
     if (tmp[0] == 'C') {
-        int n = atoi(str);
+        int n = str_int(str);
         g_panda->cursor_x += n;
         if (g_panda->cursor_x >= g_panda->max_cols) {
             g_panda->cursor_x -= g_panda->max_cols;
@@ -287,7 +292,7 @@ int compute_ansi_escape(const char *str, panda_global_t *g_panda) {
 
     // cursor backward
     if (tmp[0] == 'D') {
-        int n = atoi(str);
+        int n = str_int(str);
         g_panda->cursor_x -= n;
         if (g_panda->cursor_x < 0) {
             g_panda->cursor_x += g_panda->max_cols;
@@ -298,7 +303,7 @@ int compute_ansi_escape(const char *str, panda_global_t *g_panda) {
     return tmp - start;
 }
 
-void panda_scroll(uint32_t line_count) {
+static void panda_scroll(uint32_t line_count) {
     int offset;
 
     g_panda->cursor_x = 0;
@@ -338,7 +343,7 @@ void panda_scroll(uint32_t line_count) {
     }
 }
 
-void draw_cursor(int errase) {
+static void draw_cursor(int errase) {
     uint32_t offset;
     if (!errase) {
         for (uint32_t i = 0; i < g_panda->font->height; i++) {
@@ -355,13 +360,13 @@ void draw_cursor(int errase) {
     }
 }
 
-uint8_t panda_print_string(const char *string, int len, int tmp_color) {
+uint8_t panda_print_string(const char *string, int len, int string_color, uint8_t default_color) {
     if (!g_panda) return 0;
     int tmp, old_color;
 
-    if (tmp_color != -1) {
+    if (string_color != -1) {
         old_color = g_panda->color;
-        g_panda->color = tmp_color;
+        g_panda->color = string_color;
     }
 
     for (int i = 0; (len < 0) ? (string[i]) : (i < len); i++) {
@@ -376,7 +381,7 @@ uint8_t panda_print_string(const char *string, int len, int tmp_color) {
             for (; g_panda->cursor_x < tmp; g_panda->cursor_x++)
                 panda_set_char(g_panda->cursor_x, g_panda->cursor_y - g_panda->scroll_offset, ' ', g_panda->color);
         } else if (string[i] == '\e')
-            i += compute_ansi_escape(string + i, g_panda);
+            i += compute_ansi_escape(string + i, g_panda, default_color);
         else {
             panda_set_char(g_panda->cursor_x, g_panda->cursor_y - g_panda->scroll_offset, string[i], g_panda->color);
             g_panda->cursor_x++;
@@ -388,11 +393,12 @@ uint8_t panda_print_string(const char *string, int len, int tmp_color) {
         if (!g_panda->cursor_is_hidden)
             draw_cursor(0);
     }
-    if (tmp_color != -1) {
-        tmp_color = g_panda->color;
-        g_panda->color = old_color;
-    }
-    return tmp_color;
+    if (string_color == -1)
+        return g_panda->color;
+
+    string_color = g_panda->color;
+    g_panda->color = old_color;
+    return string_color;
 }
 
 #define offset_to_cursor_y(offset, max_cols) ((offset) / (2 * (max_cols)))
@@ -434,16 +440,23 @@ void panda_get_size(uint32_t *x, uint32_t *y) {
     }
 }
 
-int panda_change_font(const char *file) {
-    if (!g_panda) return 1;
-    font_data_t *font = load_psf_font(file);
-    if (font == NULL) return 1;
+int panda_change_font(uint32_t sid) {
+    if (!g_panda || IS_SID_NULL(sid))
+        return 1;
+
+    font_data_t *font = load_psf_font(sid);
+
+    if (font == NULL)
+        return 1;
 
     panda_clear_screen();
     free_font(g_panda->font);
     g_panda->font = font;
     g_panda->max_lines = syscall_vesa_height() / g_panda->font->height;
     g_panda->max_cols = syscall_vesa_width() / g_panda->font->width;
+    g_panda->screen_buffer = krealloc_ask(g_panda->screen_buffer,
+            g_panda->max_lines * g_panda->max_cols * sizeof(screen_char_t));
+
     return 0;
 }
 
@@ -451,16 +464,16 @@ void *panda_screen_backup(void) {
     if (!g_panda)
         return NULL;
 
-    font_data_t *font = malloc(sizeof(font_data_t));
-    memcpy(font, g_panda->font, sizeof(font_data_t));
-    font->data = malloc(font->charcount * font->charsize);
-    memcpy(font->data, g_panda->font->data, font->charcount * font->charsize);
+    font_data_t *font = kmalloc(sizeof(font_data_t));
+    mem_cpy(font, g_panda->font, sizeof(font_data_t));
+    font->data = kmalloc(font->charcount * font->charsize);
+    mem_cpy(font->data, g_panda->font->data, font->charcount * font->charsize);
 
-    screen_char_t *screen = malloc(g_panda->max_lines * g_panda->max_cols * sizeof(screen_char_t));
-    memcpy(screen, g_panda->screen_buffer, g_panda->max_lines * g_panda->max_cols * sizeof(screen_char_t));
+    screen_char_t *screen = kmalloc(g_panda->max_lines * g_panda->max_cols * sizeof(screen_char_t));
+    mem_cpy(screen, g_panda->screen_buffer, g_panda->max_lines * g_panda->max_cols * sizeof(screen_char_t));
 
-    panda_global_t *panda = malloc(sizeof(panda_global_t));
-    memcpy(panda, g_panda, sizeof(panda_global_t));
+    panda_global_t *panda = kmalloc(sizeof(panda_global_t));
+    mem_cpy(panda, g_panda, sizeof(panda_global_t));
     panda->font = font;
     panda->screen_buffer = screen;
 
@@ -478,17 +491,17 @@ void panda_screen_restore(void *data) {
     syscall_process_auto_schedule(0);
 
     // restore font
-    g_panda->font->data = realloc_ask( g_panda->font->data, source->font->charcount * source->font->charsize);
-    memcpy(g_panda->font->data, source->font->data, source->font->charcount * source->font->charsize);
+    g_panda->font->data = krealloc_ask( g_panda->font->data, source->font->charcount * source->font->charsize);
+    mem_cpy(g_panda->font->data, source->font->data, source->font->charcount * source->font->charsize);
     g_panda->font->charcount = source->font->charcount;
     g_panda->font->charsize = source->font->charsize;
     g_panda->font->height = source->font->height;
     g_panda->font->width = source->font->width;
 
     // restore screen buffer
-    g_panda->screen_buffer = realloc_ask(g_panda->screen_buffer,
+    g_panda->screen_buffer = krealloc_ask(g_panda->screen_buffer,
             source->max_lines * source->max_cols * sizeof(screen_char_t));
-    memcpy(g_panda->screen_buffer, source->screen_buffer,
+    mem_cpy(g_panda->screen_buffer, source->screen_buffer,
             source->max_lines * source->max_cols * sizeof(screen_char_t));
 
     // restore other fields
@@ -515,23 +528,23 @@ void panda_screen_restore(void *data) {
         draw_cursor(0);
 }
 
-void panda_screen_free(void *data) {
+void panda_screen_kfree(void *data) {
     panda_global_t *panda = (panda_global_t *) data;
     if (!panda) return;
     free_font(panda->font);
-    free(panda->screen_buffer);
-    free(panda);
+    kfree(panda->screen_buffer);
+    kfree(panda);
 }
 
-void init_panda(void) {
+static void init_panda(void) {
     if (!syscall_vesa_state()) {
         fd_printf(2, "[panda] VESA is not enabled\n");
         g_panda = NULL;
         return;
     }
 
-    g_panda = malloc_ask(sizeof(panda_global_t));
-    g_panda->font = load_psf_font("/zada/fonts/lat38-bold18.psf");
+    g_panda = kmalloc_ask(sizeof(panda_global_t));
+    g_panda->font = load_psf_font(fu_path_to_sid(SID_ROOT, DEFAULT_FONT));
 
     if (g_panda->font == NULL) {
         fd_printf(2, "\n Failed to load font\n");
@@ -554,5 +567,5 @@ void init_panda(void) {
     g_panda->fb = syscall_vesa_fb();
     g_panda->pitch = syscall_vesa_pitch();
 
-    g_panda->screen_buffer = calloc_ask(g_panda->max_lines * g_panda->max_cols, sizeof(screen_char_t));
+    g_panda->screen_buffer = kcalloc_ask(g_panda->max_lines * g_panda->max_cols, sizeof(screen_char_t));
 }

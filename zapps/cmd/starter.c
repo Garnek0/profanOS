@@ -13,6 +13,7 @@
 #include <profan.h>
 
 #include <string.h>
+#include <unistd.h>
 #include <stdlib.h>
 #include <stdio.h>
 
@@ -23,23 +24,18 @@ void free_tab(char **tab) {
 }
 
 char **ft_split(char *s, char c) {
-    char **res;
     int i, j, k;
+    char **res;
 
-    res = malloc((strlen(s) + 1) * sizeof(char *));
-    for (i = 0, j = 0, k = 0; s[i]; i++) {
-        if (s[i] != c)
-            continue;
-        res[j] = malloc(i - k + 1);
-        memcpy(res[j], s + k, i - k);
-        res[j][i - k] = '\0';
-        j++;
-        k = i + 1;
+    res = calloc(strlen(s) + 1, sizeof(char *));
+    for (i = j = k = 0; s[i]; i++) {
+        if (s[i] == c) {
+            res[j++] = strndup(s + k, i - k);
+            k = i + 1;
+        }
     }
-    res[j] = malloc(i - k + 1);
-    memcpy(res[j], s + k, i - k);
-    res[j][i - k] = '\0';
-    res[j + 1] = NULL;
+    if (k != i)
+        res[j++] = strndup(s + k, i - k);
     return res;
 }
 
@@ -58,7 +54,7 @@ char *find_cmd(char *cmd) {
         strcat(res, "/");
         strcat(res, cmd);
         strcat(res, ".elf");
-        sid = fu_path_to_sid(ROOT_SID, res);
+        sid = fu_path_to_sid(SID_ROOT, res);
         if (!IS_SID_NULL(sid) && fu_is_file(sid)) {
             free_tab(paths);
             return res;
@@ -70,32 +66,13 @@ char *find_cmd(char *cmd) {
 }
 
 int internal_cd(int argc, char **argv) {
-    char *current_path, *dir;
-    uint32_t sid;
-
-    if (argc != 2) {
+    if (argc != 2)
         fprintf(stderr, "Usage: cd <dir>\n");
-        return 1;
-    }
-
-    current_path = getenv("PWD");
-    if (current_path == NULL)
-        return 1;
-
-    dir = assemble_path(current_path, argv[1]);
-    fu_simplify_path(dir);
-
-    sid = fu_path_to_sid(ROOT_SID, dir);
-    if (IS_SID_NULL(sid) || !fu_is_dir(sid)) {
-        fprintf(stderr, "cd: %s: No such directory\n", argv[1]);
-        free(dir);
-        return 1;
-    }
-
-    setenv("PWD", dir, 1);
-    free(dir);
-
-    return 0;
+    else if (chdir(argv[1]) == -1)
+        fprintf(stderr, "cd: %s: No such file or directory\n", argv[1]);
+    else
+        return 0;
+    return 1;
 }
 
 int execute_line(char *line) {
@@ -103,11 +80,12 @@ int execute_line(char *line) {
     int res, argc;
 
     args = ft_split(line, ' ');
-    if (args[0] == NULL) {
-        free(args);
-        return 0;
-    }
+
+    if (args[0] == NULL)
+        return (free(args), 0);
+
     for (argc = 0; args[argc]; argc++);
+
     if (strcmp(args[0], "cd") == 0) {
         res = internal_cd(argc, args);
         free_tab(args);
@@ -115,15 +93,17 @@ int execute_line(char *line) {
     }
 
     cmd = find_cmd(args[0]);
+
     if (cmd == NULL) {
         fprintf(stderr, "%s: command not found\n", args[0]);
         free_tab(args);
-        free(cmd);
         return 1;
     }
+
     res = run_ifexist(cmd, argc, args);
     free_tab(args);
     free(cmd);
+
     return res;
 }
 
@@ -138,17 +118,17 @@ int main(void) {
     int res = 0;
 
     while (1) {
-        printf("(%d) %s # ", res, getenv("PWD"));
+        printf("(%d) %s # ", res, profan_wd_path);
         fflush(stdout);
-        line = open_input(NULL);
-        if (!line || !*line) {
+        line = profan_input(NULL);
+        if (!line) {
             putchar('\n');
-            free(line);
+            profan_kfree(line);
             break;
         }
         remove_trailing_newline(line);
         res = execute_line(line);
-        free(line);
+        profan_kfree(line);
     }
     return 0;
 }

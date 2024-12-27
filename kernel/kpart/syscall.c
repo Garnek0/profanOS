@@ -67,7 +67,7 @@ void *SYSCALL_ARRAY[] = {
     sys_power,          // 25
     sys_kinfo,          // 26
 
-    binary_exec,        // 27
+    elf_exec,        // 27
 
     // process.h + runtime.h
     process_auto_schedule, // 28
@@ -75,10 +75,10 @@ void *SYSCALL_ARRAY[] = {
     process_fork,       // 30
     process_sleep,      // 31
     process_wakeup,     // 32
-    process_handover,   // 33
-    force_exit_pid,     // 34
+    process_wait,       // 33
+    process_kill,       // 34
     process_get_pid,    // 35
-    process_get_info,   // 36
+    process_info,   // 36
     process_list_all,   // 37
 
     // system.h
@@ -92,12 +92,10 @@ void *SYSCALL_ARRAY[] = {
     scuba_call_phys,    // 43
 };
 
-#define SYSCALL_COUNT 49
-
 void syscall_handler(registers_t *r) {
     uint32_t syscall_id = r->eax;
 
-    if (syscall_id >= SYSCALL_COUNT) {
+    if (syscall_id >= (sizeof(SYSCALL_ARRAY) / sizeof(SYSCALL_ARRAY[0]))) {
         sys_error("syscall %d not found\n", syscall_id);
         return;
     }

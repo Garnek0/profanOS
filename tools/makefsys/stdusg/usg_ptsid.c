@@ -51,6 +51,7 @@ uint32_t fu_rec_path_to_sid(filesys_t *filesys, uint32_t parent, char *path) {
 
     if (count == -1) {
         printf("failed to get directory content during path search\n");
+        free(name);
         return SID_NULL;
     }
 
@@ -83,7 +84,7 @@ uint32_t fu_path_to_sid(filesys_t *filesys, uint32_t from, char *path) {
     uint32_t ret;
 
     if (strcmp("/", path) == 0) {
-        ret = ROOT_SID;
+        ret = SID_ROOT;
     } else if (path[0] == '/') {
         ret = fu_rec_path_to_sid(filesys, from, path + 1);
     } else {

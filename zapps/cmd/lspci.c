@@ -162,7 +162,7 @@ int main(int argc, char **argv) {
     for (uint32_t i = 0; i < devs; i++) {
         pci_device_t *pci_dev = pci_devices[i];
 
-        printf("%x,%x [%x:%x:%x] - %s %s (%x %x)\n",
+        printf("%02x,%02x [%04x:%04x:%x] %s %s (%x %x)\n",
             pci_dev->bus,
             pci_dev->slot,
 
@@ -183,7 +183,5 @@ int main(int argc, char **argv) {
             printf("BAR%d: %08x ", j, pci_dev->bar[j]);
         puts("\n");
     }
-
-    profan_cleanup();
     return 0;
 }

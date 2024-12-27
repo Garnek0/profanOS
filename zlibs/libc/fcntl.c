@@ -16,54 +16,31 @@
 #include <string.h>
 #include <fcntl.h>
 #include <stdio.h>
+#include <errno.h>
 
 int open(const char *path, int flags, ...) {
     // mode is ignored, permissions are always 777
 
-    char *fullpath, *cwd = getenv("PWD");
-    fullpath = cwd ? assemble_path(cwd, path) : strdup(path);
+    char *fullpath;
+    fullpath = profan_join_path(profan_wd_path, path);
 
-    uint32_t sid = fu_path_to_sid(ROOT_SID, fullpath);
-
-    if (IS_SID_NULL(sid) && (flags & O_CREAT)) {
-        sid = fu_file_create(0, fullpath);
-    }
-
-    if (IS_SID_NULL(sid)) {
-        free(fullpath);
-        return -1;
-    }
-
-    if (flags & O_TRUNC && fu_is_file(sid)) {
-        fu_file_set_size(sid, 0);
-    }
-
-    int fd = fm_open(fullpath);
-
-    if (fd < 0) {
-        free(fullpath);
-        return -1;
-    }
-
-    if (flags & O_APPEND) {
-        fm_lseek(fd, 0, SEEK_END);
-    }
-
+    int fd = fm_open(fullpath, flags);
     free(fullpath);
-    return fd;
-}
 
-// compatibility for old precompiled programs
-int profan_open(const char *path, int flags, ...) {
-    return open(path, flags);
+    if (fd >= 0) {
+        return fd;
+    }
+
+    errno = -fd;
+    return -1;
 }
 
 int creat(const char *file, mode_t mode) {
-    puts("creat is not implemented yet, WHY DO YOU USE IT ?");
+    profan_nimpl("creat");
     return -1;
 }
 
 int fcntl(int fd, int cmd, ...) {
-    puts("fcntl is not implemented yet, WHY DO YOU USE IT ?");
+    profan_nimpl("fcntl");
     return -1;
 }

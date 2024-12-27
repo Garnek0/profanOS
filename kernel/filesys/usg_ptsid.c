@@ -45,11 +45,7 @@ uint32_t fu_rec_path_to_sid(filesys_t *filesys, uint32_t parent, char *path) {
 
     count = fu_get_dir_content(filesys, parent, &sids, &names);
 
-    if (count == -1) {
-        return SID_NULL;
-    }
-
-    if (count == 0) {
+    if (count < 1) {
         free(name);
         return SID_NULL;
     }
@@ -83,7 +79,7 @@ uint32_t fu_path_to_sid(filesys_t *filesys, uint32_t from, char *path) {
     uint32_t ret;
 
     if (str_cmp("/", path) == 0) {
-        ret = ROOT_SID;
+        ret = SID_ROOT;
     } else if (path[0] == '/') {
         ret = fu_rec_path_to_sid(filesys, from, path + 1);
     } else {
