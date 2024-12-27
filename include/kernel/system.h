@@ -37,6 +37,7 @@
 #define WATPOK_ADDR     0x1FFFFB
 #define MEM_BASE_ADDR   0x1FFFFF
 
+#include <ktype.h>
 
 // system.c
 void kernel_exit_current(void);

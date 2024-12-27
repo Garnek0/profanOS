@@ -67,7 +67,7 @@ void *SYSCALL_ARRAY[] = {
     sys_power,          // 25
     sys_kinfo,          // 26
 
-    elf_exec,        // 27
+    elf_exec,           // 27
 
     // process.h + runtime.h
     process_auto_schedule, // 28
@@ -78,18 +78,20 @@ void *SYSCALL_ARRAY[] = {
     process_wait,       // 33
     process_kill,       // 34
     process_get_pid,    // 35
-    process_info,   // 36
-    process_list_all,   // 37
+    process_sigmap,     // 36
+    process_sigsend,    // 37
+    process_info,       // 38
+    process_list_all,   // 39
 
     // system.h
-    pok_load,           // 38
-    pok_unload,         // 39
+    pok_load,           // 40
+    pok_unload,         // 41
 
     // scubasuit.h
-    scuba_call_generate,// 40
-    scuba_call_map,     // 41
-    scuba_call_unmap,   // 42
-    scuba_call_phys,    // 43
+    scuba_call_generate,// 42
+    scuba_call_map,     // 43
+    scuba_call_unmap,   // 44
+    scuba_call_phys,    // 45
 };
 
 void syscall_handler(registers_t *r) {
